@@ -22,13 +22,16 @@ class App : CliktCommand() {
       .readLines()
       .filter { line -> line.contains("gradle") || line.contains("kotlin") }
       .mapNotNull { line ->
+        if(line.contains("kotlin")){
+          println(line)
+        }
         val processId = "(.*?) ".toRegex().find(line)!!.groupValues.drop(1).first().toInt()
         val gradleVersion =
           "org.gradle.launcher.daemon.bootstrap.GradleDaemon (.*?) ".toRegex()
             .find(line)?.groupValues?.drop(1)?.firstOrNull()
         if (gradleVersion == null) {
           val kotlinVersion =
-            "kotlin-compiler-embeddable\\/(.*?)\\/".toRegex().find(line)?.groupValues?.drop(1)
+            "kotlin-compiler-embeddable-(.*?)\\.jar".toRegex().find(line)?.groupValues?.drop(1)
               ?.firstOrNull()
           if (kotlinVersion != null) {
             Daemon(type = DaemonType.Kotlin, version = kotlinVersion, processId = processId)
