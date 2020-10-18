@@ -22,7 +22,7 @@ class App : CliktCommand() {
       .readLines()
       .filter { line -> line.contains("gradle") || line.contains("kotlin") }
       .mapNotNull { line ->
-        if(line.contains("kotlin")){
+        if (line.contains("kotlin")) {
           println(line)
         }
         val processId = "(.*?) ".toRegex().find(line)!!.groupValues.drop(1).first().toInt()
@@ -45,6 +45,11 @@ class App : CliktCommand() {
       .groupBy { it.type }
       .mapValues { it.value.sortedByDescending { it.version } }
       .flatMap { it.value }
+
+    if (daemons.isEmpty()) {
+      TermUi.echo("No daemons detected.")
+      return
+    }
 
     val promptItems = daemons
       .mapIndexed { index, daemon ->
