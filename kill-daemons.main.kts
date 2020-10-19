@@ -45,21 +45,7 @@ class App : CliktCommand() {
       .readLines()
       .filter { line -> line.contains("gradle") || line.contains("kotlin") }
       .mapNotNull { line ->
-        val processId = "(.*?) ".toRegex().find(line)!!.groupValues.drop(1).first().toInt()
-        val gradleVersion = "org.gradle.launcher.daemon.bootstrap.GradleDaemon (.*?) ".toRegex()
-          .find(line)?.groupValues?.drop(1)?.firstOrNull()
-        if (gradleVersion == null) {
-          val kotlinVersion =
-            "kotlin-compiler-embeddable-(.*?)\\.jar".toRegex().find(line)?.groupValues?.drop(1)
-              ?.firstOrNull()
-          if (kotlinVersion != null) {
-            Daemon(type = DaemonType.Kotlin, version = kotlinVersion, processId = processId)
-          } else {
-            null
-          }
-        } else {
-          Daemon(type = DaemonType.Gradle, version = gradleVersion, processId = processId)
-        }
+        parseDaemon(line)
       }
       .groupBy { it.type }
       .mapValues { (_, daemons) ->
@@ -102,6 +88,27 @@ class App : CliktCommand() {
       Runtime.getRuntime().exec(command)
       TermUi.echo("killed ${daemon.type}\t${daemon.version}")
     }
+  }
+
+  private fun parseDaemon(line: String): Daemon? {
+    val processId = "(.*?) ".toRegex().find(line)!!.groupValues.drop(1).first().toInt()
+    parseGradleVersion(line)?.let { gradleVersion ->
+      return Daemon(type = DaemonType.Gradle, version = gradleVersion, processId = processId)
+    }
+    parseKotlinVersion(line)?.let { kotlinVersion ->
+      return Daemon(type = DaemonType.Kotlin, version = kotlinVersion, processId = processId)
+    }
+    return null
+  }
+
+  private fun parseKotlinVersion(line: String): String? {
+    return "kotlin-compiler-embeddable-(.*?)\\.jar".toRegex().find(line)?.groupValues?.drop(1)
+      ?.firstOrNull()
+  }
+
+  private fun parseGradleVersion(line: String): String? {
+    return "org.gradle.launcher.daemon.bootstrap.GradleDaemon (.*?) ".toRegex()
+      .find(line)?.groupValues?.drop(1)?.firstOrNull()
   }
 
   private fun daemonsToAutoKill(daemons: List<Daemon>): List<Daemon> {
