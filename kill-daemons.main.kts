@@ -4,12 +4,8 @@
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.UsageError
 import com.github.ajalt.clikt.output.TermUi
-import com.github.ajalt.clikt.parameters.options.flag
-import com.github.ajalt.clikt.parameters.options.option
 
 class App : CliktCommand() {
-
-  private val autoKill by option("--auto-kill", "-k").flag(default = false)
 
   enum class DaemonType {
     Gradle, Kotlin
@@ -58,26 +54,34 @@ class App : CliktCommand() {
       return
     }
 
-    val daemonsToKill = if (autoKill) {
-      daemonsToAutoKill(daemons)
+    val promptItems = daemons
+      .mapIndexed { index, daemon ->
+        "[${index + 1}]\t${daemon.type}\t${daemon.version}"
+      }
+      .joinToString(separator = "\n")
+
+    TermUi.echo(promptItems)
+
+    val outdatedDaemons = outdatedDaemons(daemons)
+    val preFill = if (outdatedDaemons.isEmpty()) {
+      null
     } else {
-      val promptItems = daemons
-        .mapIndexed { index, daemon ->
-          "[${index + 1}]\t${daemon.type}\t${daemon.version}"
+      daemons.mapIndexedNotNull { index, daemon ->
+        if (daemon in outdatedDaemons) {
+          index + 1
+        } else {
+          null
         }
-        .joinToString(separator = "\n")
-
-      TermUi.echo(promptItems)
-
-      TermUi.prompt("Enter the numbers, separated by commas you want to kill") { input ->
-        input.split(",").map { rawNumber ->
-          val index = (rawNumber.toIntOrNull() ?: -1) - 1
-          daemons.getOrElse(index) {
-            throw UsageError("Invalid input")
-          }
-        }
-      }!!
+      }.joinToString(separator = ",")
     }
+    val daemonsToKill = TermUi.prompt("Enter the numbers, separated by commas you want to kill", default = preFill) { input ->
+      input.split(",").map { rawNumber ->
+        val index = (rawNumber.toIntOrNull() ?: -1) - 1
+        daemons.getOrElse(index) {
+          throw UsageError("Invalid input")
+        }
+      }
+    }!!
 
     daemonsToKill.forEach { daemon ->
       val command = if (TermUi.isWindows) {
@@ -111,11 +115,16 @@ class App : CliktCommand() {
       .find(line)?.groupValues?.drop(1)?.firstOrNull()
   }
 
-  private fun daemonsToAutoKill(daemons: List<Daemon>): List<Daemon> {
+  private fun outdatedDaemons(daemons: List<Daemon>): List<Daemon> {
     return daemons.groupBy { it.type }
       .map { (_, daemons) ->
-        daemons.sortedBy { it.version }
-          .dropLast(1)
+        val largestVersion = daemons.maxByOrNull { it.version }
+          ?.version
+        if (daemons.size > 1) {
+          daemons.filter { it.version != largestVersion }
+        } else {
+          emptyList()
+        }
       }
       .flatten()
   }
