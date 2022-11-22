@@ -1,4 +1,4 @@
-# AndroidDaemonKiller
+# Daemon Hunter
 
 This repository contains a simple script that lets you kill gradle and kotlin daemons. After updating gradle or kotlin or checking out older commits, often time you end up with multiple versions of gradle and the kotlin daemon running on your machine. These daemons consume a lot of RAM and slow down your system unnecessarily if you don't use them.
 
