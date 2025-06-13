@@ -1,11 +1,57 @@
 #!/usr/bin/env kotlin
-@file:DependsOn("com.github.ajalt.clikt:clikt-jvm:3.0.1")
+@file:DependsOn("com.github.ajalt.clikt:clikt-jvm:5.0.3")
 
+import App.Daemon
 import com.github.ajalt.clikt.core.CliktCommand
-import com.github.ajalt.clikt.core.UsageError
-import com.github.ajalt.clikt.output.TermUi
+import com.github.ajalt.clikt.core.main
+import com.github.ajalt.clikt.core.terminal
+import com.github.ajalt.mordant.terminal.ConversionResult
+import com.github.ajalt.mordant.terminal.Prompt
+import com.github.ajalt.mordant.terminal.Terminal
+
+private fun outdatedDaemons(daemons: List<Daemon>): List<Daemon> {
+  return daemons.groupBy { it.type }
+    .map { (_, daemons) ->
+      val largestVersion = daemons.maxByOrNull { it.version }
+        ?.version
+      if (daemons.size > 1) {
+        daemons.filter { it.version != largestVersion }
+      } else {
+        emptyList()
+      }
+    }
+    .flatten()
+}
+
+class KillDaemonPrompt(terminal: Terminal, private val daemons: List<Daemon>) : Prompt<List<Daemon>>(
+  prompt = "Enter the numbers, separated by commas you want to kill",
+  terminal = terminal,
+  default = outdatedDaemons(daemons),
+) {
+
+  override fun renderValue(value: List<Daemon>): String {
+    return daemons.mapIndexedNotNull { index, daemon ->
+      if (daemon in value) {
+        index + 1
+      } else {
+        null
+      }
+    }.joinToString(separator = ",")
+  }
+
+  override fun convert(input: String): ConversionResult<List<Daemon>> {
+    val result = input.split(",").map { rawNumber ->
+      val index = (rawNumber.toIntOrNull() ?: -1) - 1
+      daemons.getOrNull(index)
+        ?: return ConversionResult.Invalid("Invalid input")
+    }
+    return ConversionResult.Valid(result)
+  }
+
+}
 
 class App : CliktCommand() {
+
 
   enum class DaemonType {
     Gradle, Kotlin
@@ -22,14 +68,6 @@ class App : CliktCommand() {
     }
   }
 
-  private fun String.toVersion(): Version {
-    val numbers = split(".").map { it.toInt() }
-    val major = numbers[0]
-    val minor = numbers[1]
-    val patch = numbers.getOrNull(2)
-    return Version(major, minor, patch)
-  }
-
   data class Daemon(
     val type: DaemonType,
     val processId: Int,
@@ -37,7 +75,7 @@ class App : CliktCommand() {
   )
 
   override fun run() {
-    val daemons = Runtime.getRuntime().exec("jps -mlvV").inputStream.bufferedReader()
+    val daemons: List<Daemon> = Runtime.getRuntime().exec(arrayOf("jps", "-mlvV")).inputStream.bufferedReader()
       .readLines()
       .filter { line -> line.contains("gradle") || line.contains("kotlin") }
       .mapNotNull { line ->
@@ -50,7 +88,7 @@ class App : CliktCommand() {
       .flatMap { it.value }
 
     if (daemons.isEmpty()) {
-      TermUi.echo("No daemons detected.")
+      echo("No daemons detected.")
       return
     }
 
@@ -59,38 +97,19 @@ class App : CliktCommand() {
         "[${index + 1}]\t${daemon.type}\t${daemon.version}"
       }
       .joinToString(separator = "\n")
+    echo(promptItems)
 
-    TermUi.echo(promptItems)
-
-    val outdatedDaemons = outdatedDaemons(daemons)
-    val preFill = if (outdatedDaemons.isEmpty()) {
-      null
-    } else {
-      daemons.mapIndexedNotNull { index, daemon ->
-        if (daemon in outdatedDaemons) {
-          index + 1
-        } else {
-          null
-        }
-      }.joinToString(separator = ",")
-    }
-    val daemonsToKill = TermUi.prompt("Enter the numbers, separated by commas you want to kill", default = preFill) { input ->
-      input.split(",").map { rawNumber ->
-        val index = (rawNumber.toIntOrNull() ?: -1) - 1
-        daemons.getOrElse(index) {
-          throw UsageError("Invalid input")
-        }
-      }
-    }!!
+    val daemonsToKill: List<Daemon> = KillDaemonPrompt(terminal, daemons).ask()
+      ?: return
 
     daemonsToKill.forEach { daemon ->
-      val command = if (TermUi.isWindows) {
+      val command = if (System.getProperty("os.name")?.contains("win", ignoreCase = true) == true) {
         "taskkill /F /PID ${daemon.processId}"
       } else {
         "kill -9 ${daemon.processId}"
       }
       Runtime.getRuntime().exec(command)
-      TermUi.echo("killed ${daemon.type}\t${daemon.version}")
+      echo("killed ${daemon.type}\t${daemon.version}")
     }
   }
 
@@ -115,19 +134,8 @@ class App : CliktCommand() {
       .find(line)?.groupValues?.drop(1)?.firstOrNull()
   }
 
-  private fun outdatedDaemons(daemons: List<Daemon>): List<Daemon> {
-    return daemons.groupBy { it.type }
-      .map { (_, daemons) ->
-        val largestVersion = daemons.maxByOrNull { it.version }
-          ?.version
-        if (daemons.size > 1) {
-          daemons.filter { it.version != largestVersion }
-        } else {
-          emptyList()
-        }
-      }
-      .flatten()
-  }
 }
 
+
 App().main(args)
+
